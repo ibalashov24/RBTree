@@ -1,0 +1,355 @@
+#ifndef RBTREE_H
+#define RBTREE_H
+
+#include <functional>
+#include <memory>
+#include <iterator>
+#include <stdexcept>
+
+enum class RBTreeNodeColor { Red, Black };
+
+template<class T>
+class RBTreeNode
+{
+public:
+    RBTreeNode(RBTreeNode<T>* parent, RBTreeNode<T>* left, RBTreeNode<T>* right, RBTreeNodeColor color, T* value)
+        : parent(parent), left(left), right(right), color(color), value(value) {};
+
+    bool is_leaf() const noexcept { return left == nullptr && right == nullptr; }
+
+    // Using getters and setters for safety
+    void set_color(RBTreeNodeColor new_color)
+    {
+        if (this->is_leaf() && new_color != RBTreeNodeColor::Black)
+        {
+            throw std::invalid_argument("Rb-tree leafs can only have black color");
+        }
+        this->color = new_color;
+    };
+    RBTreeNodeColor get_color() const { return this->color; }
+    T get_value() const { return this->value; }
+
+    // Using "bad" public attributes
+    // For the performance of numerous pointer swap operations
+    RBTreeNode<T> *left, *right;
+    RBTreeNode<T> *parent;
+
+private:
+    RBTreeNodeColor color;
+    T* value;
+};
+
+template<
+        class Key,
+        class Compare = std::less<Key>,
+        class Allocator = std::allocator<Key>>
+class RBTree
+{
+public:
+    class iterator
+    {
+    public:
+        // Compulsory iterator typedefs
+        using value_type = Key;
+        using reference = Key&;
+        using pointer = typename std::allocator_traits<Allocator>::pointer;
+        using difference_type = typename std::allocator_traits<Allocator>::difference_type;
+        using iterator_category = std::bidirectional_iterator_tag;
+
+
+        // LegacyIterator
+        iterator(const iterator&);
+        ~iterator();
+        iterator& operator=(const iterator&);
+        iterator& operator++();
+        iterator operator++(int);
+        friend void swap(iterator&, iterator&);
+
+        // InputIterator
+        // value_type operator*() const;
+        pointer operator->() const;
+        friend bool operator==(const iterator&, const iterator&);
+        friend bool operator!=(const iterator&, const iterator&);
+
+        // OutputIterator
+        reference operator*() const;
+
+        // ForwardIterator
+        iterator();
+
+        // BidirectionalIterator
+        iterator operator--();
+        iterator operator--(int);
+
+    private:
+        iterator(RBTreeNode<Key>* node_ptr) : tree_node(node_ptr) {}
+
+        RBTreeNode<Key>* tree_node;
+    };
+
+    class const_iterator
+    {
+    public:
+        // Compulsory iterator typedefs
+        using value_type = Key;
+        using reference = Key&;
+        using pointer = typename std::allocator_traits<Allocator>::pointer;
+        using difference_type = typename std::allocator_traits<Allocator>::difference_type;
+        using iterator_category = std::bidirectional_iterator_tag;
+
+
+        // LegacyIterator
+        const_iterator(const const_iterator&);
+        ~const_iterator();
+        const_iterator& operator=(const const_iterator&);
+        const_iterator& operator++();
+        const_iterator operator++(int);
+        friend void swap(const_iterator&, const_iterator&);
+
+        // InputIterator
+        value_type operator*() const;
+        pointer operator->() const;
+        friend bool operator==(const const_iterator&, const const_iterator&);
+        friend bool operator!=(const const_iterator&, const const_iterator&);
+
+        // OutputIterator
+        //reference operator*() const;
+
+        // ForwardIterator
+        const_iterator();
+
+        // BidirectionalIterator
+        const_iterator operator--();
+        const_iterator operator--(int);
+    private:
+        const_iterator(RBTreeNode<Key>* node_ptr) : tree_node(node_ptr) {}
+
+        RBTreeNode<Key> *tree_node;
+    };
+
+public:
+    using value_type = Key;
+    using reference = value_type&;
+    using const_reference = const value_type&;
+    using size_type = typename std::size_t;
+
+    // (De)initialization
+    RBTree();
+    ~RBTree();
+
+    // Insertion (O(log n) amortized)
+    std::pair<iterator, bool> insert(value_type&&);
+    std::pair<iterator, bool> force_insert(iterator, const value_type&&);
+
+    // Deletion (O(log n) amortized)
+    iterator erase(iterator);
+
+    /// Merge (TODO, C++17)
+    /// template<class Compare2>
+    /// void merge(RBTree<Key, Compare2, Allocator> &);
+
+    // Search (O(log n) amortized)
+    iterator find(const_reference);
+
+    // Iterator access
+    iterator begin() noexcept;
+    iterator end() noexcept;
+    const_iterator cbegin() const noexcept;
+    const_iterator cend() const noexcept;
+
+    // Capacity
+    size_type size() const noexcept;
+
+private:
+    RBTreeNode<Key> *base_node;
+    RBTreeNode<Key> *end_node;
+
+    // Tree representation
+    size_type container_size = 0; // At the beginning rb-tree contains a leaf only (service node)
+    std::unique_ptr<RBTreeNode<Key>> root;
+
+    // Memory allocation stuff
+    const Allocator allocator;
+
+    RBTreeNode<Key>* __construct_new_node(const RBTreeNode<Key>*, const RBTreeNode<Key>*, value_type&&);
+};
+
+
+/// IMPLEMENTATION
+
+template<class Key, class Compare, class Allocator>
+RBTree<Key, Compare, Allocator>::RBTree() :
+    allocator(Allocator())
+{
+    // Creating root leaf
+    this->root = std::make_unique(new RBTreeNode<Key>(nullptr));
+
+    // Creating order
+    this->base_node = this->root.get();
+    this->end_node = this->base_node;
+}
+
+template<class Key, class Compare, class Allocator>
+RBTree<Key, Compare, Allocator>::~RBTree()
+{}
+
+template<class Key, class Compare, class Allocator>
+typename RBTree<Key, Compare, Allocator>::size_type
+RBTree<Key, Compare, Allocator>::size() const noexcept
+{
+    return this->container_size;
+}
+
+template<class Key, class Compare, class Allocator>
+typename RBTree<Key, Compare, Allocator>::iterator
+RBTree<Key, Compare, Allocator>::begin() noexcept
+{
+    RBTree<Key, Compare, Allocator>::iterator begin_iter;
+    begin_iter.tree_node = this->base_node;
+
+    return begin_iter;
+}
+
+template<class Key, class Compare, class Allocator>
+typename RBTree<Key, Compare, Allocator>::iterator
+RBTree<Key, Compare, Allocator>::end() noexcept
+{
+    RBTree<Key, Compare, Allocator>::iterator end_iter;
+    end_iter.tree_node = this->end_node;
+
+    return end_iter;
+}
+
+template<class Key, class Compare, class Allocator>
+typename RBTree<Key, Compare, Allocator>::const_iterator
+RBTree<Key, Compare, Allocator>::cbegin() const noexcept
+{
+    RBTree<Key, Compare, Allocator>::const_iterator begin_iter;
+    begin_iter.tree_node = this->base_node;
+
+    return begin_iter;
+}
+
+template<class Key, class Compare, class Allocator>
+typename RBTree<Key, Compare, Allocator>::const_iterator
+RBTree<Key, Compare, Allocator>::cend() const noexcept
+{
+    RBTree<Key, Compare, Allocator>::const_iterator end_iter;
+    end_iter.tree_node = this->end_node;
+
+    return end_iter;
+}
+
+template<class Key, class Compare, class Allocator>
+typename RBTree<Key, Compare, Allocator>::iterator
+RBTree<Key, Compare, Allocator>::find(
+        RBTree::const_reference value)
+{
+    auto comp = Compare();
+    auto equiv = [](auto a, auto b) { return !comp(a, b) && !comp(b, a); };
+
+    auto current = this->base_node;
+    while (!current->is_leaf() && !equiv(current->get_value(), value))
+    {
+        if (comp(value, current->get_value()))
+        {
+            current = current->left;
+        }
+        else
+        {
+            current = current->right;
+        }
+    }
+
+    if (current->is_leaf())
+    {
+        return this->end();
+    }
+    return RBTree::iterator(current);
+}
+
+
+template <class Key, class Compare, class Allocator>
+std::pair<RBTreeNode<Key>*, bool> // parent and direction
+find_insert_position(
+        RBTreeNode<Key> *tree_root,
+        typename RBTree<Key, Compare, Allocator>::value_type&& value)
+{
+    auto comp = Compare();
+    auto equiv = [](auto a, auto b) { return !comp(a, b) && !comp(b, a); };
+
+    auto current = tree_root;
+    auto last = current;
+    while (!current->is_leaf() && !equiv(current->get_value(), value))
+    {
+        last = current;
+        if (comp(value, current->get_value()))
+        {
+            current = current->left;
+        }
+        else
+        {
+            current = current->right;
+        }
+    }
+
+    return std::make_pair(last, current == last->left);
+}
+
+template<class Key, class Compare, class Allocator>
+RBTreeNode<Key>*
+RBTree<Key, Compare, Allocator>::__construct_new_node(
+        const RBTreeNode<Key>* parent,
+        const RBTreeNode<Key>* leaf,
+        typename RBTree::value_type&& value)
+{
+    auto val_on_heap = std::allocator_traits<Allocator>::allocate(this->allocator, 1);
+
+    RBTreeNode new_node { parent, nullptr, nullptr, RBTreeNodeColor::Red, val_on_heap };
+
+}
+
+template <class Key, class Compare, class Allocator>
+std::pair<typename RBTree<Key, Compare, Allocator>::iterator, bool>
+RBTree<Key, Compare, Allocator>::insert(
+        RBTree::value_type&& value)
+{
+    // Searching for the insert position
+    auto [last, is_left] = find_insert_position(this->base_node, value);
+
+    // Checking if node already exists
+    auto current = is_left ? last->left : last->right;
+    if (current != this->end_node)
+    {
+        // Node already exists
+        return std::make_pair(current, false);
+    }
+
+    // Creating new node (can break tree balance)
+    auto new_node = construct_new_node(last, this->end_node, value);
+    (is_left ? last->left : last->right) = new_node;
+
+    // Fixing tree balance
+    fix_balance_after_insert(new_node, this->root);
+
+    return std::make_pair(RBTree::iterator(new_node), true);
+}
+
+template <class Key, class Compare, class Allocator>
+std::pair<typename RBTree<Key, Compare, Allocator>::iterator, bool>
+RBTree<Key, Compare, Allocator>::force_insert(
+        RBTree::iterator position,
+        const RBTree::value_type&& value)
+{
+
+}
+
+template <class Key, class Compare, class Allocator>
+typename RBTree<Key, Compare, Allocator>::iterator
+RBTree<Key, Compare, Allocator>::erase(
+        RBTree::iterator position)
+{
+
+}
+
+#endif // RBTREE_H
