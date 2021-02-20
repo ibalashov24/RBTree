@@ -12,7 +12,7 @@ template<class T>
 class RBTreeNode
 {
 public:
-    RBTreeNode(RBTreeNode<T>* parent, RBTreeNode<T>* left, RBTreeNode<T>* right, RBTreeNodeColor color, T* value)
+    RBTreeNode(RBTreeNode<T>* parent, RBTreeNode<T>* left, RBTreeNode<T>* right, RBTreeNodeColor color, T value)
         : parent(parent), left(left), right(right), color(color), value(value) {};
 
     bool is_leaf() const noexcept { return left == nullptr && right == nullptr; }
@@ -36,7 +36,7 @@ public:
 
 private:
     RBTreeNodeColor color;
-    T* value;
+    T value;
 };
 
 template<
@@ -169,7 +169,9 @@ private:
     std::unique_ptr<RBTreeNode<Key>> root;
 
     // Memory allocation stuff
-    const Allocator allocator;
+    using NodeAllocator = typename std::allocator_traits<Allocator>::template rebind_alloc<RBTreeNode>;
+    const Allocator allocator {};
+    const NodeAllocator node_allocator {};
 
     RBTreeNode<Key>* __construct_new_node(const RBTreeNode<Key>*, const RBTreeNode<Key>*, value_type&&);
 };
@@ -178,8 +180,7 @@ private:
 /// IMPLEMENTATION
 
 template<class Key, class Compare, class Allocator>
-RBTree<Key, Compare, Allocator>::RBTree() :
-    allocator(Allocator())
+RBTree<Key, Compare, Allocator>::RBTree()
 {
     // Creating root leaf
     this->root = std::make_unique(new RBTreeNode<Key>(nullptr));
@@ -303,10 +304,13 @@ RBTree<Key, Compare, Allocator>::__construct_new_node(
         const RBTreeNode<Key>* leaf,
         typename RBTree::value_type&& value)
 {
-    auto val_on_heap = std::allocator_traits<Allocator>::allocate(this->allocator, 1);
+    auto node_on_heap = std::iterator_traits<RBTree::NodeAllocator>::allocate(
+                this->node_allocator, 1);
+    std::iterator_traits<RBTree::NodeAllocator>::construct(
+                this->node_allocator, node_on_heap,
+                parent, leaf, leaf, RBTreeNodeColor::Red, value);
 
-    RBTreeNode new_node { parent, nullptr, nullptr, RBTreeNodeColor::Red, val_on_heap };
-
+    return node_on_heap;
 }
 
 template <class Key, class Compare, class Allocator>
