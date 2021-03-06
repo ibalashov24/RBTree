@@ -313,6 +313,136 @@ RBTree<Key, Compare, Allocator>::__construct_new_node(
     return node_on_heap;
 }
 
+// Swapping parent and node positions in the tree
+// Returns pointers to the new bottom node in the pair
+template<class Key, class Compare, class Allocator>
+RBTreeNode<Key>*
+perform_single_rotate(RBTreeNode<Key>* node)
+{
+    auto parent = node->parent;
+    if (parent == nullptr)
+    {
+        // In order to find an error easier
+        return nullptr;
+    }
+
+    // Swapping children
+    if (node == parent->right)
+    {
+        parent->right = node->left;
+        node->left = parent;
+    }
+    else
+    {
+        parent->left = node->right;
+        node->right = parent;
+    }
+
+    // Setting new parents
+    node->parent = parent->parent;
+    parent->parent = node;
+
+    // Swapping colors
+    auto parent_old_color = parent->get_color();
+    parent->set_color(node->get_color());
+    node->set_color(parent_old_color);
+
+    return parent;
+}
+
+/**
+ * Performs double rotate of the subtree in terms of RB-Tree.
+ * `node` is bottom element of the trip
+ */
+template<class Key, class Compare, class Allocator>
+RBTreeNode<Key>*
+perform_double_rotate(RBTreeNode<Key>* node)
+{
+    // Some guards for border options
+    auto parent = node->parent;
+    if (parent == nullptr) return nullptr;
+    auto granpa = parent->parent;
+    if (granpa == nullptr) return nullptr;
+
+    // If turning from the left to the right
+    if (parent == granpa->left)
+    {
+        if (node == parent->right)
+        {
+            node = perform_single_rotate(node);
+            parent = node->parent;
+        }
+
+        parent->parent = granpa->parent;
+        granpa->left = parent->right;
+        parent->right = granpa;
+        granpa->parent = parent;
+    }
+    // If turning from the right to the left
+    else
+    {
+        if (node == parent->left)
+        {
+            node = perform_single_rotate(node);
+            parent = node->parent;
+        }
+
+        parent->parent = granpa->parent;
+        granpa->right = parent->left;
+        parent->left = granpa;
+        granpa->parent = parent;
+    }
+
+    // Fixing color balance
+    parent->set_color(RBTreeNodeColor::Black);
+    granpa->set_color(RBTreeNodeColor::Red);
+
+    return node;
+}
+
+
+template<class Key, class Compare, class Allocator>
+void
+fix_balance_after_insert(RBTreeNode<Key>* new_node, RBTreeNode<Key>* root)
+{
+    RBTreeNode<Key>* current = new_node;
+    // Getting up until reaching given `root` or real root the tree
+    while (current != root && current != nullptr && current->parent != nullptr)
+    {
+        auto parent = current->parent;
+        auto granpa = parent->parent;
+        auto uncle =  parent == granpa->left ? granpa->right : granpa->left;
+
+        // If parent is black then the subtree is OK
+        if (parent->color == RBTreeNodeColor::Black)
+        {
+            continue;
+        }
+
+        // If uncle exists and he has red color
+        if (!uncle->is_leaf() && uncle->color == RBTreeNodeColor::Red)
+        {
+            parent->set_color(RBTreeNodeColor::Black);
+            uncle->set_color(RBTreeNodeColor::Black);
+            granpa->set_color(RBTreeNodeColor::Red);
+
+            // Saving Red-Black tree property
+            if (granpa == root)
+            {
+                granpa->set_color(RBTreeNodeColor::Black);
+            }
+        }
+        // RB-Tree leafs are always black. Just for readability
+        else if (uncle->is_leaf() || uncle->color == RBTreeNodeColor::Black)
+        {
+            current = perform_double_rotate(current);
+        }
+    }
+
+    // Restoring RB-tree root property
+    root->set_color(RBTreeNodeColor::Black);
+}
+
 template <class Key, class Compare, class Allocator>
 std::pair<typename RBTree<Key, Compare, Allocator>::iterator, bool>
 RBTree<Key, Compare, Allocator>::insert(
@@ -330,7 +460,7 @@ RBTree<Key, Compare, Allocator>::insert(
     }
 
     // Creating new node (can break tree balance)
-    auto new_node = construct_new_node(last, this->end_node, value);
+    auto new_node = this->__construct_new_node(last, this->end_node, value);
     (is_left ? last->left : last->right) = new_node;
 
     // Fixing tree balance
